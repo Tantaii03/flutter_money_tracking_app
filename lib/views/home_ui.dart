@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'package:flutter_money_tracking_app/views/money_balance_ui.dart';
+import 'package:flutter_money_tracking_app/views/money_in_ui.dart';
+import 'package:flutter_money_tracking_app/views/money_out_ui.dart';
 
 class HomeUI extends StatefulWidget {
   const HomeUI({super.key});
@@ -9,151 +12,94 @@ class HomeUI extends StatefulWidget {
 }
 
 class _HomeUIState extends State<HomeUI> {
-  final supabase = Supabase.instance.client;
+  int _selectedIndex = 1;
+
+  final List<Widget> _pages = const [
+    MoneyInUI(),
+    MoneyBalanceUI(),
+    MoneyOutUI(),
+  ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      // 1. ส่วนหัว (Header) สีเขียว Teal ตามแบบ
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF458F8B),
-        elevation: 0,
-        title: const Text(
-          "Firstname Lastname", // ชื่อผู้ใช้
-          style: TextStyle(color: Colors.white, fontSize: 18),
-        ),
-        actions: const [
-          Padding(
-            padding: EdgeInsets.only(right: 15),
-            child: CircleAvatar(
-              backgroundImage:
-                  AssetImage('assets/images/user_profile.png'), // รูปโปรไฟล์
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: _pages,
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        onTap: (index) {
+          setState(() {
+            _selectedIndex = index;
+          });
+        },
+        backgroundColor: Colors.white,
+        selectedItemColor: const Color(0xFF458F8B),
+        unselectedItemColor: Colors.grey,
+        showUnselectedLabels: true,
+        type: BottomNavigationBarType.fixed,
+        elevation: 8,
+        items: [
+          BottomNavigationBarItem(
+            icon: _buildIcon(
+              Icons.account_balance_wallet_rounded,
+              0,
+              Colors.green,
             ),
+            label: 'เงินเข้า',
           ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // 2. ส่วน Card แสดงยอดเงินคงเหลือ
-          _buildBalanceHeader(),
-
-          const SizedBox(height: 20),
-
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 25),
-            child: Align(
-              alignment: Alignment.center,
-              child: Text(
-                "เงินเข้า/เงินออก", // หัวข้อรายการ
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
+          BottomNavigationBarItem(
+            icon: _buildNotebookIcon(1),
+            label: 'สรุปยอด',
+          ),
+          BottomNavigationBarItem(
+            icon: _buildIcon(
+              Icons.monetization_on_rounded,
+              2,
+              Colors.red,
             ),
-          ),
-
-          // 3. รายการธุรกรรม (Transaction List) เรียงจากล่าสุด
-          Expanded(
-            child: _buildTransactionList(),
+            label: 'เงินออก',
           ),
         ],
       ),
     );
   }
 
-  // Widget สำหรับ Card ยอดเงิน
-  Widget _buildBalanceHeader() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(25, 10, 25, 30),
-      decoration: const BoxDecoration(
-        color: Color(0xFF458F8B),
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(35)),
+  Widget _buildIcon(IconData icon, int index, Color color) {
+    final isSelected = _selectedIndex == index;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      transform: Matrix4.translationValues(
+        0,
+        isSelected ? -6 : 0,
+        0,
       ),
-      child: Column(
-        children: [
-          const Text("ยอดเงินคงเหลือ", style: TextStyle(color: Colors.white70)),
-          const Text(
-            "2,500.00", // ยอดคงเหลือหลัก
-            style: TextStyle(
-                color: Colors.white, fontSize: 40, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 25),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _buildSummaryInfo(
-                  "ยอดเงินเข้ารวม", "5,700.00", Icons.arrow_downward),
-              _buildSummaryInfo(
-                  "ยอดเงินออกรวม", "2,200.00", Icons.arrow_upward),
-            ],
-          ),
-        ],
+      child: Icon(
+        icon,
+        size: isSelected ? 30 : 24,
+        color: isSelected ? color : Colors.grey,
       ),
     );
   }
 
-  Widget _buildSummaryInfo(String label, String amount, IconData icon) {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Icon(icon, color: Colors.white54, size: 16),
-            Text(" $label",
-                style: const TextStyle(color: Colors.white70, fontSize: 12)),
-          ],
-        ),
-        Text(amount,
-            style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold)),
-      ],
-    );
-  }
+  Widget _buildNotebookIcon(int index) {
+    final isSelected = _selectedIndex == index;
 
-  // Widget ดึงข้อมูลจาก Supabase มาแสดงผล
-  Widget _buildTransactionList() {
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: supabase
-          .from('transactions')
-          .stream(primaryKey: ['id']).order('created_at'),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData)
-          return const Center(child: CircularProgressIndicator());
-        final data = snapshot.data!;
-
-        return ListView.builder(
-          padding: const EdgeInsets.symmetric(horizontal: 15),
-          itemCount: data.length,
-          itemBuilder: (context, index) {
-            final item = data[index];
-            bool isIncome =
-                item['type'] == 'income'; // เช็คประเภทเงินเข้าหรือออก
-
-            return ListTile(
-              leading: CircleAvatar(
-                backgroundColor: isIncome ? Colors.green : Colors.red,
-                child: Icon(
-                    isIncome ? Icons.arrow_downward : Icons.arrow_upward,
-                    color: Colors.white,
-                    size: 20),
-              ),
-              title: Text(item['detail'],
-                  style: const TextStyle(fontWeight: FontWeight.w500)),
-              subtitle: Text(item['date'],
-                  style: const TextStyle(color: Colors.grey, fontSize: 12)),
-              trailing: Text(
-                "${item['amount'].toStringAsFixed(2)}",
-                style: TextStyle(
-                  color: isIncome ? Colors.green : Colors.red,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
-              ),
-            );
-          },
-        );
-      },
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      transform: Matrix4.translationValues(
+        0,
+        isSelected ? -10 : 0,
+        0,
+      ),
+      padding: const EdgeInsets.all(6),
+      child: Icon(
+        Icons.menu_book_rounded,
+        size: isSelected ? 34 : 28,
+        color: isSelected ? const Color(0xFF458F8B) : Colors.grey,
+      ),
     );
   }
 }

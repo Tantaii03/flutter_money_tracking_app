@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_money_tracking_app/services/supabase_service.dart';
+import 'package:flutter_money_tracking_app/models/user_model.dart';
 
 class MoneyInUI extends StatefulWidget {
   const MoneyInUI({super.key});
@@ -11,70 +12,46 @@ class MoneyInUI extends StatefulWidget {
 }
 
 class _MoneyInUIState extends State<MoneyInUI> {
-  // GlobalKey สำหรับจัดการ Form และการตรวจสอบ (Validation)
-  final _formKey = GlobalKey<FormState>();
-  final _detailController = TextEditingController();
-  final _amountController = TextEditingController();
-
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _amountController = TextEditingController();
+  final SupabaseService _supabaseService = SupabaseService();
   bool _isLoading = false;
-  final supabase = Supabase.instance.client;
 
-  // ฟังก์ชันแจ้งเตือนแบบ Alert Dialog
-  void _showAlert(String title, String message) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title:
-            Text(title, style: GoogleFonts.kanit(fontWeight: FontWeight.bold)),
+  void _showFeedback(String message, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
         content: Text(message, style: GoogleFonts.kanit()),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('ตกลง'),
-          ),
-        ],
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(20),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }
 
-  // ฟังก์ชันบันทึกข้อมูล (Async Function)
-  Future<void> _saveTransaction() async {
-    // จุดสำคัญ: ตรวจสอบข้อมูลก่อนส่ง
-    if (!_formKey.currentState!.validate()) {
+  Future<void> _handleSave() async {
+    if (_nameController.text.trim().isEmpty ||
+        _amountController.text.trim().isEmpty) {
+      _showFeedback('❌ กรุณากรอกข้อมูลให้ครบถ้วน!', Colors.redAccent);
       return;
     }
 
     setState(() => _isLoading = true);
 
     try {
-      // ส่งข้อมูลไปที่ Table 'transactions'
-      await supabase.from('transactions').insert({
-        'detail': _detailController.text.trim(),
-        'amount': double.parse(_amountController.text),
-        'type': 'income',
-        'date': DateFormat('d MMMM yyyy').format(DateTime.now()),
-        'created_at':
-            DateTime.now().toIso8601String(), // เก็บเวลาจริงสำหรับการเรียงลำดับ
-      });
-
-      // จุดสำคัญ: ตรวจสอบ mounted เพื่อป้องกัน Error "use_build_context_synchronously"
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('บันทึกรายรับสำเร็จ!'),
-            backgroundColor: Colors.green),
+      final newData = UserModel(
+        name: _nameController.text.trim(),
+        amount: int.parse(_amountController.text.trim()),
+        type: 'IN',
       );
 
-      // เคลียร์ค่าในช่องกรอก
-      _detailController.clear();
-      _amountController.clear();
+      await _supabaseService.insertPayment(newData);
 
-      // หน่วงเวลาเล็กน้อยเพื่อให้คนอ่าน SnackBar ทันก่อนกลับหน้า Home
-      await Future.delayed(const Duration(milliseconds: 500));
-      if (mounted) Navigator.pushReplacementNamed(context, '/home');
+      if (!mounted) return;
+      _showFeedback('✅ บันทึกรายรับเรียบร้อยแล้ว', Colors.green);
+      Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
     } catch (e) {
-      if (mounted) _showAlert('ผิดพลาด', 'ไม่สามารถบันทึกได้ กรุณาลองใหม่');
+      _showFeedback('เกิดข้อผิดพลาด: $e', Colors.red);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -82,83 +59,67 @@ class _MoneyInUIState extends State<MoneyInUI> {
 
   @override
   Widget build(BuildContext context) {
-    String currentDay =
+    final double statusBarHeight = MediaQuery.of(context).padding.top;
+    String formattedDate =
         DateFormat('วันที่ d MMMM yyyy', 'th').format(DateTime.now());
 
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF458F8B),
-        elevation: 0,
-        title:
-            const Text("บันทึกรายรับ", style: TextStyle(color: Colors.white)),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
       body: SingleChildScrollView(
         child: Column(
           children: [
-            _buildMiniHeader(),
+            // 1. Header แบบเดียวกับหน้า Balance (ชิดขอบบน + บัตรลอย)
+            _buildHeader(statusBarHeight),
+
             Padding(
-              padding: const EdgeInsets.all(25.0),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  children: [
-                    Text(currentDay,
-                        style: GoogleFonts.kanit(
-                            fontSize: 20, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 30),
+              padding: const EdgeInsets.symmetric(horizontal: 30),
+              child: Column(
+                children: [
+                  const SizedBox(height: 30),
+                  Text(formattedDate,
+                      style: GoogleFonts.kanit(
+                          fontSize: 22, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 10),
+                  Text('บันทึกเงินเข้า',
+                      style: GoogleFonts.kanit(
+                          fontSize: 18, color: Colors.grey[600])),
+                  const SizedBox(height: 35),
 
-                    // ช่องกรอกรายละเอียด
-                    TextFormField(
-                      controller: _detailController,
-                      decoration: const InputDecoration(
-                          labelText: "รายการเงินเข้า",
-                          hintText: "เช่น เงินเดือน, ขายของ"),
-                      validator: (value) =>
-                          value!.isEmpty ? 'กรุณาระบุรายละเอียด' : null,
-                    ),
-                    const SizedBox(height: 20),
-
-                    // ช่องกรอกจำนวนเงิน (รับเฉพาะตัวเลข)
-                    TextFormField(
+                  _buildInputField(
+                      label: 'รายการเงินเข้า',
+                      hint: 'เช่น เงินเดือน, ค่าจ้าง',
+                      controller: _nameController),
+                  const SizedBox(height: 25),
+                  _buildInputField(
+                      label: 'จำนวนเงินเข้า',
+                      hint: '0.00',
                       controller: _amountController,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(
-                          labelText: "จำนวนเงิน (บาท)", hintText: "0.00"),
-                      validator: (value) {
-                        if (value!.isEmpty) return 'กรุณาระบุจำนวนเงิน';
-                        if (double.tryParse(value) == null)
-                          return 'กรุณากรอกเป็นตัวเลขเท่านั้น';
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 40),
+                      isNumber: true),
 
-                    // ปุ่มบันทึกพร้อมสถานะ Loading
-                    SizedBox(
-                      width: double.infinity,
-                      height: 55,
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _saveTransaction,
-                        style: ElevatedButton.styleFrom(
+                  const SizedBox(height: 50),
+
+                  // ปุ่มบันทึกสไตล์เดียวกับหน้าอื่น
+                  SizedBox(
+                    width: double.infinity,
+                    height: 60,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _handleSave,
+                      style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF458F8B),
-                          shape: const StadiumBorder(),
-                        ),
-                        child: _isLoading
-                            ? const CircularProgressIndicator(
-                                color: Colors.white)
-                            : const Text("บันทึกเงินเข้า",
-                                style: TextStyle(
-                                    color: Colors.white, fontSize: 18)),
-                      ),
+                          elevation: 2,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(35))),
+                      child: _isLoading
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : Text('บันทึกเงินเข้า',
+                              style: GoogleFonts.kanit(
+                                  fontSize: 20,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold)),
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 30),
+                ],
               ),
             ),
           ],
@@ -167,23 +128,129 @@ class _MoneyInUIState extends State<MoneyInUI> {
     );
   }
 
-  Widget _buildMiniHeader() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(25),
-      decoration: const BoxDecoration(
-        color: Color(0xFF458F8B),
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
-      ),
-      child: const Column(
+  // ปรับ Header ให้เป็นโครงสร้างเดียวกับ Balance_ui
+  Widget _buildHeader(double statusBarHeight) {
+    double headerHeight = 160;
+    double cardTopPosition = 95;
+
+    return SizedBox(
+      height: 240 + statusBarHeight,
+      child: Stack(
         children: [
-          Text("ยอดเงินคงเหลือ", style: TextStyle(color: Colors.white70)),
-          Text("2,500.00",
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold)),
+          // พื้นหลังเขียวชิดขอบบน
+          Container(
+            width: double.infinity,
+            height: headerHeight + statusBarHeight,
+            padding: EdgeInsets.only(
+              top: statusBarHeight + 10,
+              left: 25,
+              right: 25,
+            ),
+            decoration: const BoxDecoration(
+              color: Color(0xFF458F8B),
+              borderRadius: BorderRadius.only(
+                bottomLeft: Radius.circular(50),
+                bottomRight: Radius.circular(50),
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Nicel Mubatri',
+                  style: GoogleFonts.kanit(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const CircleAvatar(
+                  radius: 25,
+                  backgroundColor: Colors.white24,
+                  child: CircleAvatar(
+                    radius: 23,
+                    backgroundImage:
+                        AssetImage('assets/images/user_profile2.png'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // บัตรยอดเงินคงเหลือ (ลอย)
+          Positioned(
+            top: cardTopPosition + statusBarHeight,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Container(
+                width: MediaQuery.of(context).size.width * 0.88,
+                padding:
+                    const EdgeInsets.symmetric(vertical: 20, horizontal: 25),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF3E837E),
+                  borderRadius: BorderRadius.circular(30),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.1),
+                      blurRadius: 15,
+                      offset: const Offset(0, 8),
+                    )
+                  ],
+                ),
+                child: _buildBalanceBoxContent(),
+              ),
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildBalanceBoxContent() {
+    return FutureBuilder<Map<String, double>>(
+      future: _supabaseService.getTransactionSummary(),
+      builder: (context, snapshot) {
+        final summary =
+            snapshot.data ?? {'totalIn': 0, 'totalOut': 0, 'balance': 0};
+        return Column(
+          children: [
+            Text('ยอดเงินคงเหลือปัจจุบัน',
+                style: GoogleFonts.kanit(color: Colors.white70, fontSize: 14)),
+            const SizedBox(height: 5),
+            Text(NumberFormat('#,###.00').format(summary['balance']),
+                style: GoogleFonts.kanit(
+                    color: Colors.white,
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold)),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildInputField(
+      {required String label,
+      required String hint,
+      required TextEditingController controller,
+      bool isNumber = false}) {
+    return TextField(
+      controller: controller,
+      keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+      style: GoogleFonts.kanit(),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: GoogleFonts.kanit(color: const Color(0xFF458F8B)),
+        hintText: hint,
+        hintStyle: GoogleFonts.kanit(color: Colors.grey[400]),
+        floatingLabelBehavior: FloatingLabelBehavior.always,
+        enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(15),
+            borderSide: const BorderSide(color: Color(0xFFE0E0E0))),
+        focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(15),
+            borderSide: const BorderSide(color: Color(0xFF458F8B), width: 2)),
       ),
     );
   }

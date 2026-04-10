@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/date_symbol_data_local.dart'; // 🔹 สำคัญมาก: สำหรับจัดการภาษาไทย
 
-// Import ไฟล์ UI จากโฟลเดอร์ views
+// Import ไฟล์ UI ทั้งหมดจากโฟลเดอร์ views
 import 'package:flutter_money_tracking_app/views/home_ui.dart';
 import 'package:flutter_money_tracking_app/views/money_balance_ui.dart';
 import 'package:flutter_money_tracking_app/views/money_in_ui.dart';
@@ -11,9 +12,13 @@ import 'package:flutter_money_tracking_app/views/splash_screen_ui.dart';
 import 'package:flutter_money_tracking_app/views/welcome_ui.dart';
 
 Future<void> main() async {
+  // 1. ตรวจสอบว่า Flutter Binding พร้อมทำงาน
   WidgetsFlutterBinding.ensureInitialized();
 
-  // ตั้งค่า Supabase
+  // 2. ตั้งค่า Locale ภาษาไทยเพื่อให้แสดงวันที่ "มกราคม, กุมภาพันธ์..." ได้ถูกต้อง
+  await initializeDateFormatting('th', null);
+
+  // 3. ตั้งค่า Supabase เชื่อมต่อฐานข้อมูล
   await Supabase.initialize(
     url: 'https://dbilpkpmforjtpeqkill.supabase.co',
     anonKey:
@@ -23,54 +28,39 @@ Future<void> main() async {
   runApp(const MyApp());
 }
 
-// เปลี่ยน MyApp จาก StatelessWidget เป็น StatefulWidget
-class MyApp extends StatefulWidget {
+class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  @override
-  State<MyApp> createState() => _MyAppState();
-}
-
-class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Money Tracking App',
       debugShowCheckedModeBanner: false,
+
+      // 4. ตั้งค่า Theme สีเขียว Teal และฟอนต์ Kanit ทั้งแอป
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF458F8B),
           primary: const Color(0xFF458F8B),
         ),
-        textTheme: GoogleFonts.kanitTextTheme(),
+        textTheme: GoogleFonts.kanitTextTheme(
+          Theme.of(context).textTheme,
+        ),
       ),
-      // กำหนดหน้าเริ่มต้น
+
+      // 5. กำหนดหน้าเริ่มต้นเป็น SplashScreen
       initialRoute: '/',
       routes: {
-        '/': (context) => const MainScaffold(), // เรียกใช้ Scaffold หลักที่นี่
-        '/welcome': (context) => const WelcomeUI(),
-        '/home': (context) => const HomeUI(),
-        '/money_in': (context) => const MoneyInUI(),
-        '/money_out': (context) => const MoneyOutUI(),
-        '/money_balance': (context) => const MoneyBalanceUI(),
+        '/': (context) => const SplashScreenUI(), // หน้าโหลดตอนเปิดแอป
+        '/welcome': (context) => const WelcomeUI(), // หน้าแนะนำแอป
+        '/home': (context) =>
+            const HomeUI(), // หน้าหลัก (ที่มี Bottom Navigation)
+        '/money_in': (context) => const MoneyInUI(), // หน้าบันทึกรายรับ
+        '/money_out': (context) => const MoneyOutUI(), // หน้าบันทึกรายจ่าย
+        '/money_balance': (context) =>
+            const MoneyBalanceUI(), // หน้าสรุปยอดเงิน
       },
     );
-  }
-}
-
-// สร้าง Widget ที่รีเทิร์น Scaffold เพื่อเป็นโครงสร้างหลักของแอป
-class MainScaffold extends StatefulWidget {
-  const MainScaffold({super.key});
-
-  @override
-  State<MainScaffold> createState() => _MainScaffoldState();
-}
-
-class _MainScaffoldState extends State<MainScaffold> {
-  @override
-  Widget build(BuildContext context) {
-    // รีเทิร์นหน้า SplashScreenUI เป็นหน้าแรกภายใน Scaffold
-    return const SplashScreenUI();
   }
 }

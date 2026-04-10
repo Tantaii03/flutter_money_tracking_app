@@ -1,80 +1,60 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../models/payment_model.dart';
+import 'package:flutter_money_tracking_app/models/user_model.dart';
 
 class SupabaseService {
-  final _supabase = Supabase.instance.client;
+  final _client = Supabase.instance.client;
 
-  // =========================================================
-  // 🔹 ดึงข้อมูลทั้งหมดจาก Payment_tb
-  // =========================================================
-  Future<List<PaymentModel>> getAllPayments() async {
+  // บันทึกข้อมูล
+  Future<void> insertPayment(UserModel model) async {
     try {
-      final response = await _supabase
-          .from('Payment_tb')
+      await _client.from('payment_tb').insert(model.toJson());
+    } catch (e) {
+      throw Exception('บันทึกข้อมูลไม่สำเร็จ: $e');
+    }
+  }
+
+  // ดึงข้อมูลทั้งหมดเรียงจากใหม่ไปเก่า
+  Future<List<UserModel>> getAllPayments() async {
+    try {
+      final response = await _client
+          .from('payment_tb')
           .select()
           .order('created_at', ascending: false);
 
-      final List data = response as List;
-
-      return data.map((item) => PaymentModel.fromJson(item)).toList();
+      return (response as List)
+          .map((item) => UserModel.fromJson(item))
+          .toList();
     } catch (e) {
-      throw Exception('Error fetching payments: $e');
+      throw Exception('ดึงข้อมูลไม่สำเร็จ: $e');
     }
   }
 
-  // =========================================================
-  // 🔹 ดึงข้อมูลล่าสุด (ใช้แสดง Profile หน้า Home)
-  // =========================================================
-  Future<PaymentModel?> getLatestProfile() async {
+  // คำนวณยอดสรุปสำหรับหน้า Dashboard
+  Future<Map<String, double>> getTransactionSummary() async {
     try {
-      final response = await _supabase
-          .from('Payment_tb')
-          .select()
-          .order('created_at', ascending: false)
-          .limit(1)
-          .maybeSingle();
+      final response = await _client.from('payment_tb').select('data');
+      double totalIn = 0;
+      double totalOut = 0;
 
-      if (response == null) return null;
+      for (var item in response) {
+        final data = item['data'] as Map<String, dynamic>;
+        double amount = (data['amount'] ?? 0).toDouble();
 
-      return PaymentModel.fromJson(response);
+        // ✅ แก้ไขตรงนี้: ใส่ปีกกาให้ if และ else ตามที่ Diagnostic แจ้ง
+        if (data['type'] == 'IN') {
+          totalIn += amount;
+        } else {
+          totalOut += amount;
+        }
+      }
+
+      return {
+        'totalIn': totalIn,
+        'totalOut': totalOut,
+        'balance': totalIn - totalOut
+      };
     } catch (e) {
-      throw Exception('Error getting profile: $e');
-    }
-  }
-
-  // =========================================================
-  // 🔹 เพิ่มข้อมูลใหม่
-  // =========================================================
-  Future<void> insertPayment(PaymentModel payment) async {
-    try {
-      await _supabase.from('Payment_tb').insert(payment.toJson());
-    } catch (e) {
-      throw Exception('Insert error: $e');
-    }
-  }
-
-  // =========================================================
-  // 🔹 อัปเดตข้อมูล
-  // =========================================================
-  Future<void> updatePayment(PaymentModel payment) async {
-    try {
-      await _supabase
-          .from('Payment_tb')
-          .update(payment.toJson())
-          .eq('id', payment.id!);
-    } catch (e) {
-      throw Exception('Update error: $e');
-    }
-  }
-
-  // =========================================================
-  // 🔹 ลบข้อมูล
-  // =========================================================
-  Future<void> deletePayment(String id) async {
-    try {
-      await _supabase.from('Payment_tb').delete().eq('id', id);
-    } catch (e) {
-      throw Exception('Delete error: $e');
+      return {'totalIn': 0, 'totalOut': 0, 'balance': 0};
     }
   }
 }
